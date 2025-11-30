@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Friend's Mood Status</title>
+    <!-- Load Tailwind CSS for simple, responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Pacifico&family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #f0f4f8 0%, #d9e2ec 100%);
+        }
+        /* Style for the big, fancy mood text */
+        .mood-text {
+            font-family: 'Pacifico', cursive;
+            text-shadow: 2px 4px 6px rgba(0, 0, 0, 0.2);
+            line-height: 1.2;
+            transition: color 0.5s ease-in-out, transform 0.3s ease-out;
+            cursor: default;
+        }
+        /* Custom shadow for buttons */
+        .btn-shadow {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+        .loading-animation {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center p-4">
+
+    <!-- Main Container -->
+    <div class="w-full max-w-4xl bg-white rounded-3xl p-6 md:p-12 shadow-2xl border border-gray-100">
+
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Friend's Status Dashboard</h1>
+
+        <!-- User ID Display (Required for Multi-User Apps) -->
+        <div id="auth-status" class="text-xs text-center text-gray-500 mb-8 p-2 bg-gray-50 rounded-lg">
+            <span id="user-id-display">Authenticating...</span>
+        </div>
+
+        <!-- Current Mood Display -->
+        <div class="text-center mb-10">
+            <p class="text-xl text-gray-600 mb-4">Current Mood:</p>
+            <div id="mood-status-container" class="mood-text text-5xl md:text-7xl lg:text-8xl text-indigo-600 min-h-[100px] flex items-center justify-center">
+                <div class="loading-animation"></div>
+            </div>
+        </div>
+
+        <!-- Mood Selection Buttons -->
+        <div class="border-t pt-8 mt-8 border-gray-200">
+            <p class="text-lg font-semibold text-gray-700 mb-4 text-center">Select the Status:</p>
+            <div id="mood-buttons" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <!-- Buttons will be populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Box/Modal for Confirmation/Errors (Replaces alert()) -->
+    <div id="message-box" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden items-center justify-center p-4 z-50">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full">
+            <h3 class="text-xl font-bold mb-3 text-red-600" id="message-box-title">Error</h3>
+            <p id="message-box-body" class="text-gray-700 mb-4">An error occurred.</p>
+            <button onclick="hideMessageBox()" class="w-full bg-indigo-600 text-white py-2 rounded-lg font-semibold hover:bg-indigo-700 transition duration-200">OK</button>
+        </div>
+    </div>
+
+    <!-- Load Firebase Modules -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- IMPORTANT: FIREBASE CONFIGURATION FOR GITHUB PAGES ---
+        // Your configuration has been securely embedded here.
+        const EXTERNAL_FIREBASE_CONFIG = {
+            apiKey: "AIzaSyALNpDO7TaKQN1Uzx1jlDalHCN9BYZBxnE",
+            authDomain: "mood-status-6f603.firebaseapp.com",
+            projectId: "mood-status-6f603",
+            storageBucket: "mood-status-6f603.firebasestorage.app",
+            messagingSenderId: "259082166624",
+            appId: "1:259082166624:web:ff49f081a019569cec7e05"
+            // measurementId is excluded as it's not strictly necessary for core functionality
+        };
+        
+        // Global variables for Firebase configuration and environment data
+        const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const canvasFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Determine which config to use: Canvas globals (if running here) or the external one (for GitHub Pages)
+        const firebaseConfig = Object.keys(canvasFirebaseConfig).length > 0
+            ? canvasFirebaseConfig
+            : EXTERNAL_FIREBASE_CONFIG;
+        
+        // Determine which App ID to use
+        const appId = Object.keys(canvasFirebaseConfig).length > 0
+            ? canvasAppId
+            : firebaseConfig.projectId;
+
+        // Firebase Initialization
+        let app, db, auth, userId = null;
+        let isAuthReady = false;
+
+        // CRITICAL CHANGE: Switched to a simpler path for external deployment.
+        // You MUST ensure your Firebase security rules match this path.
+        const MOOD_COLLECTION_PATH = `mood_status`; 
+        const MOOD_DOCUMENT_ID = 'current_mood';
+
+        // --- Mood Data Configuration ---
+        const MOODS = [
+            { text: "Fantastic!", color: "text-green-600", emoji: "😊" },
+            { text: "Chillin' Out", color: "text-blue-500", emoji: "😎" },
+            { text: "A Bit Tired", color: "text-gray-500", emoji: "😴" },
+            { text: "Super Busy", color: "text-yellow-600", emoji: "🤯" },
+            // Added new moods:
+            { text: "On Period", color: "text-pink-600", emoji: "🩸" },
+            { text: "Furious!", color: "text-red-700", emoji: "😡" },
+        ];
+
+        // --- Utility Functions ---
+
+        /** Shows a custom message box instead of alert() */
+        window.showMessageBox = (title, body) => {
+            document.getElementById('message-box-title').textContent = title;
+            document.getElementById('message-box-body').textContent = body;
+            document.getElementById('message-box').classList.remove('hidden');
+            document.getElementById('message-box').classList.add('flex');
+        };
+
+        /** Hides the custom message box */
+        window.hideMessageBox = () => {
+            document.getElementById('message-box').classList.add('hidden');
+            document.getElementById('message-box').classList.remove('flex');
+        };
+
+        /** Updates the fancy mood display in the UI */
+        function updateMoodDisplay(moodText, moodColor, emoji) {
+            const container = document.getElementById('mood-status-container');
+            // Ensure all possible mood colors are cleared before adding the new one
+            container.classList.remove('text-indigo-600', 'text-green-600', 'text-blue-500', 'text-gray-500', 'text-yellow-600', 'text-pink-600', 'text-red-700');
+            container.classList.add(moodColor);
+            container.innerHTML = `${emoji} ${moodText}`;
+        }
+
+        /** Handles updating the mood status in Firestore */
+        async function setMoodStatus(mood) {
+            if (!db || !userId) {
+                showMessageBox("Error", "Authentication or database connection not ready. Please try again.");
+                return;
+            }
+
+            try {
+                // Construct the document reference
+                const moodDocRef = doc(db, MOOD_COLLECTION_PATH, MOOD_DOCUMENT_ID);
+
+                const data = {
+                    mood: mood.text,
+                    color: mood.color,
+                    emoji: mood.emoji,
+                    timestamp: new Date().toISOString(),
+                    setByUserId: userId // To track who set it
+                };
+
+                await setDoc(moodDocRef, data);
+                console.log("Mood status updated successfully:", data);
+
+            } catch (e) {
+                console.error("Error setting mood status:", e);
+                showMessageBox("Database Error", `Failed to save mood status: ${e.message}`);
+            }
+        }
+
+        /** Sets up the real-time listener for the mood status */
+        function setupMoodListener() {
+            if (!db) return;
+
+            const moodDocRef = doc(db, MOOD_COLLECTION_PATH, MOOD_DOCUMENT_ID);
+
+            // Listen for document changes in real-time
+            onSnapshot(moodDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    console.log("Current mood data:", data);
+                    updateMoodDisplay(data.mood, data.color, data.emoji);
+
+                } else {
+                    console.log("No mood status found. Setting default.");
+                    const defaultMood = MOODS[0];
+                    updateMoodDisplay(defaultMood.text, defaultMood.color, defaultMood.emoji);
+                    // Optionally set a default value if none exists
+                    // setMoodStatus(defaultMood);
+                }
+            }, (error) => {
+                console.error("Error listening to mood status:", error);
+                // Only show error box if the listener fails after successful auth
+                if (isAuthReady) {
+                    showMessageBox("Real-time Error", `Failed to load real-time status: ${error.message}`);
+                }
+            });
+        }
+
+
+        // --- UI Setup ---
+
+        function setupMoodButtons() {
+            const container = document.getElementById('mood-buttons');
+            container.innerHTML = ''; // Clear existing buttons
+
+            MOODS.forEach(mood => {
+                const button = document.createElement('button');
+                button.textContent = mood.emoji + ' ' + mood.text;
+                button.className = `btn-shadow w-full py-4 px-3 rounded-xl font-bold transition duration-300 ease-in-out transform hover:scale-[1.03]
+                                    bg-white border-2 hover:border-indigo-500 text-gray-800 text-base md:text-lg`;
+                button.onclick = () => setMoodStatus(mood);
+                container.appendChild(button);
+            });
+        }
+
+
+        // --- Firebase Core Initialization and Authentication ---
+
+        async function initializeFirebase() {
+            // Check if we have a valid configuration
+            if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_API_KEY")) {
+                console.error("Firebase Configuration Missing.");
+                document.getElementById('mood-status-container').innerHTML = `<p class="text-xl text-red-500">Firebase Config Missing. Please set it up for GitHub Pages.</p>`;
+                document.getElementById('user-id-display').textContent = `Auth Error: Config Missing`;
+                showMessageBox("Setup Failure", "Firebase configuration is missing or is set to placeholder values. You must replace the 'YOUR_...' values in the script for external deployment.");
+                return;
+            }
+
+            try {
+                // Set Firebase log level to Debug for visibility
+                setLogLevel('debug');
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Setup persistence (optional, but good practice)
+                await setPersistence(auth, browserSessionPersistence);
+                
+                // Use onAuthStateChanged to manage state after sign-in attempt
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        document.getElementById('user-id-display').textContent = `User ID: ${userId}`;
+                        isAuthReady = true;
+                        console.log("Authentication successful. Starting data listener.");
+                        setupMoodListener();
+                    } else {
+                        userId = null;
+                        document.getElementById('user-id-display').textContent = "Not authenticated.";
+                        isAuthReady = true;
+                        // In case of sign-out (shouldn't happen here), we stop listeners if any
+                    }
+                });
+
+                // Attempt to sign in
+                if (initialAuthToken && Object.keys(canvasFirebaseConfig).length > 0) {
+                    // Sign in with the provided custom token (only used in Canvas environment)
+                    await signInWithCustomToken(auth, initialAuthToken);
+                    console.log("Signed in with custom token (Canvas).");
+                } else {
+                    // Fallback to anonymous sign-in for external deployment or if token is not available
+                    await signInAnonymously(auth);
+                    console.log("Signed in anonymously.");
+                }
+
+            } catch (e) {
+                console.error("Firebase Initialization/Authentication Error:", e);
+                document.getElementById('mood-status-container').innerHTML = `<p class="text-xl text-red-500">Error</p>`;
+                document.getElementById('user-id-display').textContent = `Auth Error: ${e.message}`;
+                showMessageBox("Setup Failure", `Failed to connect to the database. Error: ${e.message}`);
+            }
+        }
+
+        // Initialize everything when the script loads
+        window.onload = () => {
+            setupMoodButtons();
+            initializeFirebase();
+        };
+
+    </script>
+</body>
+</html>
