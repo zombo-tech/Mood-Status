@@ -62,9 +62,21 @@
 
         <!-- Mood Selection Buttons -->
         <div class="border-t pt-8 mt-8 border-gray-200">
-            <p class="text-lg font-semibold text-gray-700 mb-4 text-center">Select the Status:</p>
+            <p class="text-lg font-semibold text-gray-700 mb-4 text-center">Select a Predefined Status:</p>
             <div id="mood-buttons" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <!-- Buttons will be populated by JS -->
+            </div>
+        </div>
+
+        <!-- Custom Mood Section (NEW) -->
+        <div class="mt-8 pt-6 border-t border-gray-200">
+            <p class="text-lg font-semibold text-gray-700 mb-4 text-center">... or Set a Custom Status:</p>
+            <div class="flex flex-col sm:flex-row gap-4">
+                <input type="text" id="custom-mood-input" placeholder="Type your current unique mood here..."
+                       class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 text-lg shadow-inner">
+                <button id="set-custom-mood-btn" class="btn-shadow py-3 px-6 rounded-xl font-bold bg-indigo-500 text-white hover:bg-indigo-600 transition duration-300">
+                    Set Custom Mood
+                </button>
             </div>
         </div>
     </div>
@@ -150,8 +162,9 @@
         /** Updates the fancy mood display in the UI */
         function updateMoodDisplay(moodText, moodColor, emoji) {
             const container = document.getElementById('mood-status-container');
-            // Ensure all possible mood colors are cleared before adding the new one
-            container.classList.remove('text-indigo-600', 'text-green-600', 'text-blue-500', 'text-gray-500', 'text-yellow-600', 'text-pink-600', 'text-red-700');
+            // Ensure all possible mood colors are cleared before adding the new one.
+            // Note: 'text-purple-600' is added to this list to handle custom moods.
+            container.classList.remove('text-indigo-600', 'text-green-600', 'text-blue-500', 'text-gray-500', 'text-yellow-600', 'text-pink-600', 'text-red-700', 'text-purple-600');
             container.classList.add(moodColor);
             container.innerHTML = `${emoji} ${moodText}`;
         }
@@ -183,6 +196,28 @@
                 showMessageBox("Database Error", `Failed to save mood status: ${e.message}`);
             }
         }
+        
+        /** Handles setting a mood from custom input (NEW) */
+        async function setCustomMoodStatus() {
+            const inputElement = document.getElementById('custom-mood-input');
+            const customText = inputElement.value.trim();
+
+            if (!customText) {
+                showMessageBox("Input Required", "Please enter a status before setting a custom mood.");
+                return;
+            }
+
+            // Create a temporary mood object for the custom status
+            const customMood = {
+                text: customText,
+                color: "text-purple-600", // A designated color for custom moods
+                emoji: "✨", // A default emoji for custom moods
+            };
+
+            await setMoodStatus(customMood);
+            inputElement.value = ''; // Clear input after successful setting
+        }
+
 
         /** Sets up the real-time listener for the mood status */
         function setupMoodListener() {
@@ -292,6 +327,12 @@
         window.onload = () => {
             setupMoodButtons();
             initializeFirebase();
+            
+            // NEW: Add event listener for the custom mood button
+            const customBtn = document.getElementById('set-custom-mood-btn');
+            if (customBtn) {
+                customBtn.addEventListener('click', setCustomMoodStatus);
+            }
         };
 
     </script>
